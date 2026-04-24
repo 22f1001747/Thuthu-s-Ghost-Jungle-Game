@@ -1,16 +1,16 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Jungle Escape - Complete Game</title>
+<title>Jungle Escape</title>
 <style>
-body { margin:0; overflow:hidden; }
+body { margin:0; overflow:hidden; background:black; }
 canvas { display:block; }
 #restartBtn {
     position:absolute;
     top:20px;
     right:20px;
-    display:none;
     padding:10px;
+    font-size:16px;
 }
 </style>
 </head>
@@ -27,7 +27,7 @@ const ctx = canvas.getContext("2d");
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// ===== IMAGES =====
+// ===== LOAD IMAGES =====
 function img(src){ let i=new Image(); i.src=src; return i;}
 
 const bg1 = img("bg1.png");
@@ -36,62 +36,64 @@ const bg3 = img("bg3.png");
 
 const player1 = img("player_run1.png");
 const player2 = img("player_run2.png");
+
 const ghostImg = img("ghost.png");
 const caveImg = img("cave.png");
+const riverImg = img("river.png");
+
 const rockImg = img("rock.png");
 const logImg = img("log.png");
+
 const fruitImg = img("fruit.png");
 const flowerImg = img("flower.png");
 
-// ===== WORLD =====
+// ===== GAME STATE =====
 let worldX = 0;
+let phase = "explore";
 
-// ===== PLAYER =====
 let player = {
     x: canvas.width * 0.3,
     y: canvas.height/2,
     size: 120,
     speed: 6,
-    baseSpeed: 6,
-    boostSpeed: 10,
     jumping: false,
     jumpHeight: 0,
     frame: 0,
-    direction: "right"
+    frozen: false,
+    direction: 1
 };
 
-// ===== ENERGY =====
-let energy = 0;
-let maxEnergy = 100;
-let boosting = false;
-
-// ===== GAME STATE =====
-let phase = "explore";
-let gameOver = false;
-
-// ===== OBJECTS =====
-let cave = { x: 2000, y: canvas.height/2 };
-
 let ghost = {
-    x: 2000,
+    x: 0,
     y: canvas.height/2,
-    speed: 2,
     active: false
 };
 
-let exit = { x: 0, y: 0, active: false };
+let cave = { x: 2000, y: canvas.height/2 };
+
+let river = {
+    x: 0,
+    y: canvas.height/2,
+    active: false
+};
 
 let obstacles = [];
 let items = [];
 
-// ===== UI =====
+let lives = 3;
+let score = 0;
+let lastLifeScore = 0;
+
+let chaseStartTime = null;
+let lastSurvivalTick = 0;
+
+let lastSpawnX = 0;
+
 let message = "";
 let messageTime = 0;
-let chaseStartTime = 0;
+let runTime = 0;
 
-let score = 0;
-let startTime = 0;
-let timeSurvived = 0;
+let gameOver = false;
 
 // ===== CONTROLS =====
 let keys = {};
@@ -100,35 +102,55 @@ document.addEventListener("keyup", e => keys[e.key]=false);
 
 document.getElementById("restartBtn").onclick = () => location.reload();
 
+// ===== LIFE SYSTEM =====
+function loseLife(){
+    if (gameOver) return;
+
+    lives--;
+
+    if (lives <= 0){
+        lives = 0;
+        gameOver = true;
+    }
+}
+
+// ===== SCORE SYSTEM =====
+function addScore(points){
+    if (gameOver) return;
+
+    score += points;
+
+    if (score < 0){
+        score = 0;
+        loseLife();
+    }
+
+    if (score - lastLifeScore >= 20){
+        lives++;
+        lastLifeScore = score;
+    }
+}
+
 // ===== SPAWN =====
 function spawn(){
 
-    if (phase !== "chase") return;
+    if (phase !== "chase" || gameOver) return;
 
-    if (obstacles.length > 4 || items.length > 4) return;
+    if (worldX - lastSpawnX > 300){
 
-    let lanes = [
-        canvas.height * 0.35,
-        canvas.height * 0.5,
-        canvas.height * 0.7
-    ];
-
-    let laneY = lanes[Math.floor(Math.random()*lanes.length)];
-
-    if (Math.random() < 0.05){
         obstacles.push({
-            x: worldX + canvas.width + 300,
-            y: laneY,
+            x: worldX + canvas.width,
+            y: Math.random() * (canvas.height - 150),
             type: Math.random()<0.5 ? "rock" : "log"
         });
-    }
 
-    if (Math.random() < 0.05){
         items.push({
-            x: worldX + canvas.width + 500,
-            y: laneY,
+            x: worldX + canvas.width + 200,
+            y: Math.random() * (canvas.height - 100),
             type: Math.random()<0.5 ? "fruit" : "flower"
         });
+
+        lastSpawnX = worldX;
     }
 }
 
@@ -137,29 +159,17 @@ function update(){
 
     if (gameOver) return;
 
-    // BOOST SYSTEM
-    if (keys["Shift"] && energy > 0){
-        player.speed = player.boostSpeed;
-        energy -= 1;
-    } else {
-        player.speed = player.baseSpeed;
+    // movement
+    if (!player.frozen){
+        if (keys["ArrowRight"]) { worldX += player.speed; player.direction = 1; }
+        if (keys["ArrowLeft"]) { worldX -= player.speed; player.direction = -1; }
+        if (keys["ArrowUp"]) player.y -= player.speed;
+        if (keys["ArrowDown"]) player.y += player.speed;
     }
 
-    // Movement
-    if (keys["ArrowRight"]) {
-        worldX += player.speed;
-        player.direction = "right";
-    }
+    player.y = Math.max(50, Math.min(canvas.height - 150, player.y));
 
-    if (keys["ArrowLeft"]) {
-        worldX -= player.speed;
-        player.direction = "left";
-    }
-
-    if (keys["ArrowUp"]) player.y -= player.speed;
-    if (keys["ArrowDown"]) player.y += player.speed;
-
-    // Jump
+    // jump
     if (keys[" "] && !player.jumping){
         player.jumping = true;
     }
@@ -172,29 +182,36 @@ function update(){
         }
     }
 
-    // ENTER CAVE
+    // ===== CAVE ENTRY =====
     if (phase === "explore"){
         if (Math.abs(worldX - cave.x) < 200){
             phase = "warning";
-            message = "You entered a wrong place!";
+            player.frozen = true;
+
+            message = "You entered a wrong place...";
             messageTime = Date.now();
+
+            ghost.active = true;
+            ghost.x = worldX - 300;
+            ghost.y = player.y;
         }
     }
 
     if (phase === "warning"){
         if (Date.now() - messageTime > 2000){
-            phase = "wait";
+            phase = "run";
             message = "RUN!";
-            chaseStartTime = Date.now();
+            runTime = Date.now();
         }
     }
 
-    if (phase === "wait"){
-        if (Date.now() - chaseStartTime > 2000){
+    if (phase === "run"){
+        if (Date.now() - runTime > 1000){
             phase = "chase";
-            ghost.active = true;
-            startTime = Date.now();
+            player.frozen = false;
             message = "";
+            chaseStartTime = Date.now();
+            lastSurvivalTick = 0;
         }
     }
 
@@ -207,34 +224,29 @@ function update(){
         let dy = player.y - ghost.y;
 
         let dist = Math.sqrt(dx*dx + dy*dy);
-
-        let speed = 2 + Math.min(5, dist/50);
+        let speed = 3 + Math.min(5, dist/40);
 
         ghost.x += (dx/dist) * speed;
         ghost.y += (dy/dist) * speed;
 
-        // Keep ghost close
-        if (dist > canvas.width){
-            ghost.x = worldX - 200;
-        }
-
         let gx = ghost.x - worldX + player.x;
 
+        // ghost catch
         if (Math.abs(gx - player.x) < 60 &&
             Math.abs(ghost.y - player.y) < 60){
-            gameOver = true;
-            document.getElementById("restartBtn").style.display = "block";
+
+            loseLife();
+            ghost.x -= 200;
         }
 
-        // Move objects
-        obstacles.forEach(o => o.x -= 5);
-        items.forEach(i => i.x -= 5);
+        // move objects
+        obstacles.forEach(o => o.x -= 6);
+        items.forEach(i => i.x -= 6);
 
-        // Remove offscreen
         obstacles = obstacles.filter(o => o.x - worldX > -200);
         items = items.filter(i => i.x - worldX > -200);
 
-        // Obstacles
+        // collisions
         obstacles.forEach((o,i)=>{
             let ox = o.x - worldX + player.x;
 
@@ -242,44 +254,55 @@ function update(){
                 Math.abs(player.y - o.y) < 80){
 
                 if (player.jumping){
-                    score += 5;
-                    obstacles.splice(i,1);
+                    addScore(5);
                 } else {
-                    gameOver = true;
+                    if (o.type === "log") addScore(-5);
+                    else addScore(-3);
                 }
+
+                obstacles.splice(i,1);
             }
         });
 
-        // Items
         items.forEach((it,i)=>{
             let ix = it.x - worldX + player.x;
 
             if (Math.abs(ix - player.x) < 70 &&
                 Math.abs(player.y - it.y) < 70){
 
-                score += 5;
-                energy = Math.min(maxEnergy, energy + 20);
+                if (it.type === "fruit") addScore(3);
+                else addScore(2);
+
                 items.splice(i,1);
             }
         });
 
-        timeSurvived = Math.floor((Date.now()-startTime)/1000);
+        // survival score
+        let time = Math.floor((Date.now()-chaseStartTime)/1000);
 
-        // EXIT SPAWN
-        if (timeSurvived > 10 && !exit.active){
-            exit.active = true;
-            exit.x = worldX + canvas.width + 500;
-            exit.y = canvas.height * 0.5;
+        if (time % 3 === 0 && time !== lastSurvivalTick){
+            addScore(1);
+            lastSurvivalTick = time;
         }
 
-        // EXIT COLLISION
-        if (exit.active){
-            let ex = exit.x - worldX + player.x;
+        // warning
+        if (time >= 90 && time < 100){
+            message = "Ghost can't cross water! Run!";
+        }
 
-            if (Math.abs(ex - player.x) < 80 &&
-                Math.abs(exit.y - player.y) < 80){
+        // river
+        if (time >= 100){
+            river.active = true;
+            river.x = worldX + canvas.width + 200;
+        }
 
-                alert("YOU ESCAPED!");
+        if (river.active){
+            let rx = river.x - worldX + player.x;
+
+            if (Math.abs(rx - player.x) < 100 &&
+                Math.abs(river.y - player.y) < 100){
+
+                alert("LEVEL COMPLETE!");
                 location.reload();
             }
         }
@@ -299,22 +322,25 @@ function draw(){
     ctx.drawImage(bg2, canvas.width-offset, 0, canvas.width, canvas.height);
     ctx.drawImage(bg3, canvas.width*2-offset, 0, canvas.width, canvas.height);
 
-    // Cave
+    if (ghost.active){
+        ctx.fillStyle="rgba(0,0,0,0.4)";
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+    }
+
     if (phase === "explore"){
         let cx = cave.x - worldX + player.x;
         ctx.drawImage(caveImg, cx, cave.y, 200,200);
     }
 
-    // Exit
-    if (exit.active){
-        let ex = exit.x - worldX + player.x;
+    if (river.active){
+        let rx = river.x - worldX + player.x;
+
         ctx.shadowColor="cyan";
-        ctx.shadowBlur=30;
-        ctx.drawImage(caveImg, ex, exit.y, 220,220);
+        ctx.shadowBlur=40;
+        ctx.drawImage(riverImg, rx, river.y, 250,150);
         ctx.shadowBlur=0;
     }
 
-    // Obstacles
     obstacles.forEach(o=>{
         let x = o.x - worldX + player.x;
         let img = o.type==="rock"?rockImg:logImg;
@@ -325,7 +351,6 @@ function draw(){
         ctx.shadowBlur=0;
     });
 
-    // Items
     items.forEach(it=>{
         let x = it.x - worldX + player.x;
         let img = it.type==="fruit"?fruitImg:flowerImg;
@@ -336,54 +361,39 @@ function draw(){
         ctx.shadowBlur=0;
     });
 
-    // Player
     let frame = Math.floor(player.frame)%2===0?player1:player2;
 
     ctx.save();
-    if (player.direction==="left"){
+    if (player.direction === -1){
+        ctx.translate(player.x + player.size, 0);
         ctx.scale(-1,1);
-        ctx.drawImage(frame,
-            -player.x-player.size,
-            player.y-player.jumpHeight,
-            player.size,
-            player.size);
+        ctx.drawImage(frame,0,player.y-player.jumpHeight,player.size,player.size);
     } else {
-        ctx.drawImage(frame,
-            player.x,
-            player.y-player.jumpHeight,
-            player.size,
-            player.size);
+        ctx.drawImage(frame,player.x,player.y-player.jumpHeight,player.size,player.size);
     }
     ctx.restore();
 
-    // Ghost
     if (ghost.active){
         let gx = ghost.x - worldX + player.x;
         ctx.drawImage(ghostImg,gx,ghost.y,160,160);
-
-        ctx.fillStyle="rgba(0,0,0,0.4)";
-        ctx.fillRect(0,0,canvas.width,canvas.height);
     }
 
-    // UI
+    let time = chaseStartTime ?
+        Math.floor((Date.now()-chaseStartTime)/1000) : 0;
+
     ctx.fillStyle="white";
     ctx.font="24px Arial";
-    ctx.fillText("Time: "+timeSurvived+"s",20,40);
+    ctx.fillText("Time: "+time+"s",20,40);
     ctx.fillText("Score: "+score,20,70);
-
-    // Energy bar
-    ctx.fillStyle="black";
-    ctx.fillRect(20,90,200,20);
-    ctx.fillStyle="green";
-    ctx.fillRect(20,90,2*energy,20);
+    ctx.fillText("Lives: "+lives,20,100);
 
     if (message){
         ctx.fillStyle="black";
-        ctx.fillRect(canvas.width/2-250,60,500,60);
+        ctx.fillRect(canvas.width/2-300,60,600,60);
 
         ctx.fillStyle="yellow";
-        ctx.font="28px Arial";
-        ctx.fillText(message, canvas.width/2-200,100);
+        ctx.font="26px Arial";
+        ctx.fillText(message, canvas.width/2-280,100);
     }
 
     if (gameOver){
