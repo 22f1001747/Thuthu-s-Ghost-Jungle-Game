@@ -1,21 +1,27 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Jungle Escape</title>
+<title>Jungle Escape - Final</title>
 <style>
 body { margin:0; overflow:hidden; background:black; }
 canvas { display:block; }
-#restartBtn {
-    position:absolute;
-    top:20px;
-    right:20px;
-    padding:10px;
-    font-size:16px;
+#restartBtn { position:absolute; top:20px; right:20px; padding:10px; z-index:5;}
+#introContainer{
+ position:fixed; width:100%; height:100%; background:black; z-index:10;
 }
+video{ width:100%; height:100%; object-fit:cover;}
+#skipBtn{ position:absolute; top:20px; right:20px; padding:10px;}
 </style>
 </head>
 
 <body>
+
+<div id="introContainer">
+<video id="introVideo" autoplay>
+<source src="intro_video.mp4">
+</video>
+<button id="skipBtn">Skip</button>
+</div>
 
 <button id="restartBtn">Restart</button>
 <canvas id="gameCanvas"></canvas>
@@ -23,393 +29,290 @@ canvas { display:block; }
 <script>
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
-
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// ===== LOAD IMAGES =====
-function img(src){ let i=new Image(); i.src=src; return i;}
+// ===== LOAD =====
+function img(s){let i=new Image();i.src=s;return i;}
+function snd(s,l=false){let a=new Audio(s);a.loop=l;return a;}
 
-const bg1 = img("bg1.png");
-const bg2 = img("bg2.png");
-const bg3 = img("bg3.png");
+const bg=[img("bg1.png"),img("bg2.png"),img("bg3.png")];
+const playerFrames=[img("player_run1.png"),img("player_run2.png")];
+const ghostImg=img("ghost.png");
+const caveImg=img("cave.png");
+const riverImg=img("river.png");
 
-const player1 = img("player_run1.png");
-const player2 = img("player_run2.png");
+const rockImg=img("rock.png");
+const logImg=img("log.png");
+const fruitImg=img("fruit.png");
+const flowerImg=img("flower.png");
 
-const ghostImg = img("ghost.png");
-const caveImg = img("cave.png");
-const riverImg = img("river.png");
+// sounds
+const jungle=snd("jungle.mp3",true);
+const ghostSound=snd("ghost.wav",true);
+const heart=snd("heartbeat.mp3",true);
+const fruitS=snd("fruit.wav");
+const flowerS=snd("flower.wav");
+const rockS=snd("hit_rock.wav");
+const logS=snd("hit_log.wav");
+const winS=snd("victory.mp3");
+const overS=snd("gameover.wav");
+const waterS=snd("water.mp3");
 
-const rockImg = img("rock.png");
-const logImg = img("log.png");
+// ===== STATE =====
+let state="intro"; // intro → explore → cave → chase → escape → end
+let worldX=0;
 
-const fruitImg = img("fruit.png");
-const flowerImg = img("flower.png");
+let player={x:canvas.width*0.3,y:canvas.height/2,size:120,frame:0,dir:1};
+let ghost={x:0,y:0};
+let cave={x:1500,y:canvas.height/2};
+let river={x:0,y:canvas.height/2,active:false};
 
-// ===== GAME STATE =====
-let worldX = 0;
-let phase = "explore";
+let obstacles=[];
+let items=[];
 
-let player = {
-    x: canvas.width * 0.3,
-    y: canvas.height/2,
-    size: 120,
-    speed: 6,
-    jumping: false,
-    jumpHeight: 0,
-    frame: 0,
-    frozen: false,
-    direction: 1
-};
+let score=0,lives=3;
+let startTime=null;
+let message="";
+let keys={};
 
-let ghost = {
-    x: 0,
-    y: canvas.height/2,
-    active: false
-};
+document.addEventListener("keydown",e=>keys[e.key]=true);
+document.addEventListener("keyup",e=>keys[e.key]=false);
 
-let cave = { x: 2000, y: canvas.height/2 };
+// ===== INTRO =====
+const intro=document.getElementById("introContainer");
+document.getElementById("skipBtn").onclick=startGame;
+document.getElementById("introVideo").onended=startGame;
 
-let river = {
-    x: 0,
-    y: canvas.height/2,
-    active: false
-};
-
-let obstacles = [];
-let items = [];
-
-let lives = 3;
-let score = 0;
-let lastLifeScore = 0;
-
-let chaseStartTime = null;
-let lastSurvivalTick = 0;
-
-let lastSpawnX = 0;
-
-let message = "";
-let messageTime = 0;
-let runTime = 0;
-
-let gameOver = false;
-
-// ===== CONTROLS =====
-let keys = {};
-document.addEventListener("keydown", e => keys[e.key]=true);
-document.addEventListener("keyup", e => keys[e.key]=false);
-
-document.getElementById("restartBtn").onclick = () => location.reload();
-
-// ===== LIFE SYSTEM =====
-function loseLife(){
-    if (gameOver) return;
-
-    lives--;
-
-    if (lives <= 0){
-        lives = 0;
-        gameOver = true;
-    }
-}
-
-// ===== SCORE SYSTEM =====
-function addScore(points){
-    if (gameOver) return;
-
-    score += points;
-
-    if (score < 0){
-        score = 0;
-        loseLife();
-    }
-
-    if (score - lastLifeScore >= 20){
-        lives++;
-        lastLifeScore = score;
-    }
+function startGame(){
+ intro.style.display="none";
+ state="explore";
+ jungle.volume=0.3;
+ jungle.play();
 }
 
 // ===== SPAWN =====
+let lane=[0.2,0.5,0.8];
+let spawnTimer=0;
+
 function spawn(){
+ if(state!=="chase")return;
 
-    if (phase !== "chase" || gameOver) return;
+ spawnTimer++;
+ if(spawnTimer<60)return;
+ spawnTimer=0;
 
-    if (worldX - lastSpawnX > 300){
+ let y=lane[Math.floor(Math.random()*3)]*canvas.height;
 
-        obstacles.push({
-            x: worldX + canvas.width,
-            y: Math.random() * (canvas.height - 150),
-            type: Math.random()<0.5 ? "rock" : "log"
-        });
+ obstacles.push({
+  x:worldX+canvas.width,
+  y:y,
+  type:Math.random()<0.5?"rock":"log"
+ });
 
-        items.push({
-            x: worldX + canvas.width + 200,
-            y: Math.random() * (canvas.height - 100),
-            type: Math.random()<0.5 ? "fruit" : "flower"
-        });
+ items.push({
+  x:worldX+canvas.width+200,
+  y:lane[Math.floor(Math.random()*3)]*canvas.height,
+  type:Math.random()<0.5?"fruit":"flower"
+ });
+}
 
-        lastSpawnX = worldX;
-    }
+// ===== SCORE =====
+function addScore(p){
+ score+=p;
+
+ if(score<0){
+  score=0;
+  lives--;
+ }
+
+ if(score>=30){
+  score-=30;
+  lives=Math.min(5,lives+1);
+ }
+
+ if(lives<=0){
+  state="end";
+  overS.play();
+ }
 }
 
 // ===== UPDATE =====
 function update(){
 
-    if (gameOver) return;
+if(state==="intro"||state==="end")return;
 
-    // movement
-    if (!player.frozen){
-        if (keys["ArrowRight"]) { worldX += player.speed; player.direction = 1; }
-        if (keys["ArrowLeft"]) { worldX -= player.speed; player.direction = -1; }
-        if (keys["ArrowUp"]) player.y -= player.speed;
-        if (keys["ArrowDown"]) player.y += player.speed;
-    }
+// movement
+if(keys["ArrowRight"]){worldX+=6;player.dir=1;}
+if(keys["ArrowLeft"]){worldX-=6;player.dir=-1;}
+if(keys["ArrowUp"])player.y-=5;
+if(keys["ArrowDown"])player.y+=5;
 
-    player.y = Math.max(50, Math.min(canvas.height - 150, player.y));
+player.y=Math.max(50,Math.min(canvas.height-150,player.y));
+player.frame+=0.3;
 
-    // jump
-    if (keys[" "] && !player.jumping){
-        player.jumping = true;
-    }
+// ===== CAVE =====
+if(state==="explore" && Math.abs(worldX-cave.x)<150){
+ state="cave";
+ message="You entered the cave...";
+ setTimeout(()=>{
+  message="RUN!";
+  state="chase";
+  startTime=Date.now();
 
-    if (player.jumping){
-        player.jumpHeight += 6;
-        if (player.jumpHeight > 50){
-            player.jumping = false;
-            player.jumpHeight = 0;
-        }
-    }
+  ghost.x=worldX-300;
+  ghost.y=player.y;
 
-    // ===== CAVE ENTRY =====
-    if (phase === "explore"){
-        if (Math.abs(worldX - cave.x) < 200){
-            phase = "warning";
-            player.frozen = true;
+  ghostSound.play();
+  heart.play();
+ },1000);
+}
 
-            message = "You entered a wrong place...";
-            messageTime = Date.now();
+// ===== CHASE =====
+if(state==="chase"){
 
-            ghost.active = true;
-            ghost.x = worldX - 300;
-            ghost.y = player.y;
-        }
-    }
+ spawn();
 
-    if (phase === "warning"){
-        if (Date.now() - messageTime > 2000){
-            phase = "run";
-            message = "RUN!";
-            runTime = Date.now();
-        }
-    }
+ let dx=worldX-ghost.x;
+ let dy=player.y-ghost.y;
 
-    if (phase === "run"){
-        if (Date.now() - runTime > 1000){
-            phase = "chase";
-            player.frozen = false;
-            message = "";
-            chaseStartTime = Date.now();
-            lastSurvivalTick = 0;
-        }
-    }
+ ghost.x+=Math.sign(dx)*5;
+ ghost.y+=dy*0.05;
 
-    // ===== CHASE =====
-    if (phase === "chase"){
+ // collision
+ let gx=ghost.x-worldX+player.x;
+ if(Math.abs(gx-player.x)<60 && Math.abs(ghost.y-player.y)<60){
+  lives--;
+  ghost.x-=200;
+ }
 
-        spawn();
+ // objects
+ obstacles.forEach(o=>o.x-=6);
+ items.forEach(i=>i.x-=6);
 
-        let dx = worldX - ghost.x;
-        let dy = player.y - ghost.y;
+ obstacles.forEach((o,i)=>{
+  let x=o.x-worldX+player.x;
+  if(Math.abs(x-player.x)<70 && Math.abs(player.y-o.y)<70){
+   addScore(o.type==="rock"?-3:-5);
+   o.type==="rock"?rockS.play():logS.play();
+   obstacles.splice(i,1);
+  }
+ });
 
-        let dist = Math.sqrt(dx*dx + dy*dy);
-        let speed = 3 + Math.min(5, dist/40);
+ items.forEach((it,i)=>{
+  let x=it.x-worldX+player.x;
+  if(Math.abs(x-player.x)<70 && Math.abs(player.y-it.y)<70){
+   addScore(it.type==="fruit"?3:2);
+   it.type==="fruit"?fruitS.play():flowerS.play();
+   items.splice(i,1);
+  }
+ });
 
-        ghost.x += (dx/dist) * speed;
-        ghost.y += (dy/dist) * speed;
+ let t=Math.floor((Date.now()-startTime)/1000);
 
-        let gx = ghost.x - worldX + player.x;
+ if(t===80) message="Water ahead!";
+ if(t===90){
+  river.active=true;
+  river.x=worldX+canvas.width*0.6;
+  waterS.play();
+ }
 
-        // ghost catch
-        if (Math.abs(gx - player.x) < 60 &&
-            Math.abs(ghost.y - player.y) < 60){
+ if(river.active){
+  let rx=river.x-worldX+player.x;
+  if(Math.abs(rx-player.x)<150){
+   state="end";
+   winS.play();
+  }
+ }
+}
 
-            loseLife();
-            ghost.x -= 200;
-        }
-
-        // move objects
-        obstacles.forEach(o => o.x -= 6);
-        items.forEach(i => i.x -= 6);
-
-        obstacles = obstacles.filter(o => o.x - worldX > -200);
-        items = items.filter(i => i.x - worldX > -200);
-
-        // collisions
-        obstacles.forEach((o,i)=>{
-            let ox = o.x - worldX + player.x;
-
-            if (Math.abs(ox - player.x) < 80 &&
-                Math.abs(player.y - o.y) < 80){
-
-                if (player.jumping){
-                    addScore(5);
-                } else {
-                    if (o.type === "log") addScore(-5);
-                    else addScore(-3);
-                }
-
-                obstacles.splice(i,1);
-            }
-        });
-
-        items.forEach((it,i)=>{
-            let ix = it.x - worldX + player.x;
-
-            if (Math.abs(ix - player.x) < 70 &&
-                Math.abs(player.y - it.y) < 70){
-
-                if (it.type === "fruit") addScore(3);
-                else addScore(2);
-
-                items.splice(i,1);
-            }
-        });
-
-        // survival score
-        let time = Math.floor((Date.now()-chaseStartTime)/1000);
-
-        if (time % 3 === 0 && time !== lastSurvivalTick){
-            addScore(1);
-            lastSurvivalTick = time;
-        }
-
-        // warning
-        if (time >= 90 && time < 100){
-            message = "Ghost can't cross water! Run!";
-        }
-
-        // river
-        if (time >= 100){
-            river.active = true;
-            river.x = worldX + canvas.width + 200;
-        }
-
-        if (river.active){
-            let rx = river.x - worldX + player.x;
-
-            if (Math.abs(rx - player.x) < 100 &&
-                Math.abs(river.y - player.y) < 100){
-
-                alert("LEVEL COMPLETE!");
-                location.reload();
-            }
-        }
-    }
-
-    player.frame += 0.3;
 }
 
 // ===== DRAW =====
 function draw(){
 
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    let offset = worldX % canvas.width;
-
-    ctx.drawImage(bg1, -offset, 0, canvas.width, canvas.height);
-    ctx.drawImage(bg2, canvas.width-offset, 0, canvas.width, canvas.height);
-    ctx.drawImage(bg3, canvas.width*2-offset, 0, canvas.width, canvas.height);
-
-    if (ghost.active){
-        ctx.fillStyle="rgba(0,0,0,0.4)";
-        ctx.fillRect(0,0,canvas.width,canvas.height);
-    }
-
-    if (phase === "explore"){
-        let cx = cave.x - worldX + player.x;
-        ctx.drawImage(caveImg, cx, cave.y, 200,200);
-    }
-
-    if (river.active){
-        let rx = river.x - worldX + player.x;
-
-        ctx.shadowColor="cyan";
-        ctx.shadowBlur=40;
-        ctx.drawImage(riverImg, rx, river.y, 250,150);
-        ctx.shadowBlur=0;
-    }
-
-    obstacles.forEach(o=>{
-        let x = o.x - worldX + player.x;
-        let img = o.type==="rock"?rockImg:logImg;
-
-        ctx.shadowColor="red";
-        ctx.shadowBlur=20;
-        ctx.drawImage(img,x,o.y,120,120);
-        ctx.shadowBlur=0;
-    });
-
-    items.forEach(it=>{
-        let x = it.x - worldX + player.x;
-        let img = it.type==="fruit"?fruitImg:flowerImg;
-
-        ctx.shadowColor="yellow";
-        ctx.shadowBlur=25;
-        ctx.drawImage(img,x,it.y,80,80);
-        ctx.shadowBlur=0;
-    });
-
-    let frame = Math.floor(player.frame)%2===0?player1:player2;
-
-    ctx.save();
-    if (player.direction === -1){
-        ctx.translate(player.x + player.size, 0);
-        ctx.scale(-1,1);
-        ctx.drawImage(frame,0,player.y-player.jumpHeight,player.size,player.size);
-    } else {
-        ctx.drawImage(frame,player.x,player.y-player.jumpHeight,player.size,player.size);
-    }
-    ctx.restore();
-
-    if (ghost.active){
-        let gx = ghost.x - worldX + player.x;
-        ctx.drawImage(ghostImg,gx,ghost.y,160,160);
-    }
-
-    let time = chaseStartTime ?
-        Math.floor((Date.now()-chaseStartTime)/1000) : 0;
-
-    ctx.fillStyle="white";
-    ctx.font="24px Arial";
-    ctx.fillText("Time: "+time+"s",20,40);
-    ctx.fillText("Score: "+score,20,70);
-    ctx.fillText("Lives: "+lives,20,100);
-
-    if (message){
-        ctx.fillStyle="black";
-        ctx.fillRect(canvas.width/2-300,60,600,60);
-
-        ctx.fillStyle="yellow";
-        ctx.font="26px Arial";
-        ctx.fillText(message, canvas.width/2-280,100);
-    }
-
-    if (gameOver){
-        ctx.fillStyle="red";
-        ctx.font="60px Arial";
-        ctx.fillText("GAME OVER",canvas.width/2-180,canvas.height/2);
-    }
+// background
+let offset=worldX%canvas.width;
+for(let i=0;i<3;i++){
+ ctx.drawImage(bg[i],i*canvas.width-offset,0,canvas.width,canvas.height);
 }
 
+// cave
+if(state!=="chase"){
+ let x=cave.x-worldX+player.x;
+ ctx.drawImage(caveImg,x,cave.y,200,200);
+}
+
+// river
+if(river.active){
+ let x=river.x-worldX+player.x;
+ ctx.drawImage(riverImg,x,river.y,250,150);
+}
+
+// objects
+obstacles.forEach(o=>{
+ let x=o.x-worldX+player.x;
+ ctx.drawImage(o.type==="rock"?rockImg:logImg,x,o.y,100,100);
+});
+
+items.forEach(i=>{
+ let x=i.x-worldX+player.x;
+ ctx.drawImage(i.type==="fruit"?fruitImg:flowerImg,x,i.y,90,90);
+});
+
+// player
+let frame=playerFrames[Math.floor(player.frame)%2];
+ctx.save();
+if(player.dir===-1){
+ ctx.translate(player.x+player.size,0);
+ ctx.scale(-1,1);
+ ctx.drawImage(frame,0,player.y,player.size,player.size);
+}else{
+ ctx.drawImage(frame,player.x,player.y,player.size,player.size);
+}
+ctx.restore();
+
+// ghost
+if(state==="chase"){
+ let gx=ghost.x-worldX+player.x;
+ ctx.drawImage(ghostImg,gx,ghost.y,140,140);
+}
+
+// UI
+let t=startTime?Math.floor((Date.now()-startTime)/1000):0;
+
+ctx.fillStyle="white";
+ctx.font="24px Arial";
+ctx.fillText("Time: "+t,20,40);
+ctx.fillText("Score: "+score,20,70);
+ctx.fillText("Lives: "+lives,20,100);
+
+// message
+if(message){
+ ctx.fillStyle="black";
+ ctx.fillRect(canvas.width/2-200,50,400,50);
+ ctx.fillStyle="yellow";
+ ctx.fillText(message,canvas.width/2-150,85);
+}
+
+// end
+if(state==="end"){
+ ctx.fillStyle="red";
+ ctx.font="60px Arial";
+ ctx.fillText("GAME OVER / ESCAPED",canvas.width/2-300,canvas.height/2);
+}
+}
+
+// ===== LOOP =====
 function loop(){
-    update();
-    draw();
-    requestAnimationFrame(loop);
+ update();
+ draw();
+ requestAnimationFrame(loop);
 }
-
 loop();
+
 </script>
 
 </body>
