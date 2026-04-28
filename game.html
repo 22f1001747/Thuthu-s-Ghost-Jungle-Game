@@ -99,7 +99,7 @@ const waterS=snd("water.mp3");
 let state="intro";
 let worldX=0;
 
-let player={x:canvas.width*0.3,y:canvas.height/2,size:110,frame:0,dir:1};
+let player={x:canvas.width*0.3,y:canvas.height/2,size:200,frame:0,dir:1};
 let ghost={x:0,y:0};
 
 let cave={x:1200,y:canvas.height/2};
@@ -246,7 +246,10 @@ if(state==="chase"){
  obstacles.forEach((o,i)=>{
   let x=o.x-worldX+player.x;
 
-  if(Math.abs(x-player.x)<70 && Math.abs(player.y-o.y)<70){
+  if (
+  Math.abs(x - player.x) < player.size * 0.6 &&
+  Math.abs(player.y - o.y) < player.size * 0.8
+){
    if(o.type==="rock"){ score-=3; rockS.play(); }
    else { score-=5; logS.play(); }
    obstacles.splice(i,1);
@@ -305,13 +308,13 @@ for(let i=0;i<3;i++){
 // cave
 if(state==="explore"){
  let x=cave.x-worldX+player.x;
- ctx.drawImage(caveImg,x,cave.y,200,200);
+ ctx.drawImage(caveImg,x,cave.y,300,300);
 }
 
 // river
 if(river.active){
  let x=river.x-worldX+player.x;
- ctx.drawImage(riverImg,x,river.y,250,150);
+ ctx.drawImage(riverImg,x,river.y,400,250);
 }
 
 // obstacles
@@ -323,7 +326,7 @@ obstacles.forEach(o=>{
 // items
 items.forEach(i=>{
  let x=i.x-worldX+player.x;
- ctx.drawImage(i.type==="fruit"?fruitImg:flowerImg,x,i.y,90,90);
+ ctx.drawImage(i.type==="fruit"?fruitImg:flowerImg,x,i.y,70,70);
 });
 
 // player
