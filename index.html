@@ -121,15 +121,25 @@ let keys={};
 let freeze=false;
 let ghostDelay=true;
 
-// NEW STATES
 let showInstructions = false;
 let showStory = false;
+
+let safeMode = true;
+
+// ================= COLLISION FUNCTION =================
+function isColliding(px, py, pSize, ox, oy, oSize){
+    return (
+        px < ox + oSize &&
+        px + pSize > ox &&
+        py < oy + oSize &&
+        py + pSize > oy
+    );
+}
 
 // ================= INPUT =================
 document.addEventListener("keydown",e=>keys[e.key]=true);
 document.addEventListener("keyup",e=>keys[e.key]=false);
 
-// Close instructions
 document.addEventListener("keydown",(e)=>{
  if(showInstructions){
     showInstructions=false;
@@ -234,7 +244,7 @@ if(keys["ArrowDown"]) player.y+=5;
 player.y=Math.max(50,Math.min(canvas.height-150,player.y));
 player.frame+=0.3;
 
-// CAVE ENTRY WITH STORY FLOW
+// CAVE ENTRY
 if(state==="explore" && Math.abs(worldX-cave.x)<180){
  state="cave";
  freeze = true;
@@ -260,7 +270,7 @@ if(state==="chase"){
  }
 
  let gx=ghost.x-worldX+player.x;
- if(Math.abs(gx-player.x)<60 && Math.abs(ghost.y-player.y)<60){
+ if(Math.abs(gx-player.x)<70 && Math.abs(ghost.y-player.y)<70){
    lives--;
    ghost.x -=150;
  }
@@ -268,33 +278,58 @@ if(state==="chase"){
  obstacles.forEach(o=>o.x-=6);
  items.forEach(i=>i.x-=6);
 
+ // 🔥 SAFE START LOGIC ADDED HERE
  obstacles.forEach((o,i)=>{
   let x=o.x-worldX+player.x;
 
-  if (
-  Math.abs(x - player.x) < player.size * 0.6 &&
-  Math.abs(player.y - o.y) < player.size * 0.8
-){
-   if(o.type==="rock"){ score-=3; rockS.play(); }
-   else { score-=5; logS.play(); }
+  if (isColliding(player.x, player.y, player.size, x, o.y, 99)){ // slightly bigger
+
+   if(!safeMode){
+      if(o.type==="rock"){ 
+          score-=4; 
+          rockS.currentTime=0;
+          rockS.play(); 
+      }
+      else { 
+          score-=3; 
+          logS.currentTime=0;
+          logS.play(); 
+      }
+   }
+
    obstacles.splice(i,1);
   }
- });
+});
 
  items.forEach((it,i)=>{
   let x=it.x-worldX+player.x;
 
-  if (
-    Math.abs(x - player.x) < player.size * 0.6 &&
-    Math.abs(player.y - it.y) < player.size
-  ){
-   if(it.type==="fruit"){ score+=3; fruitS.play(); }
-   else { score+=2; flowerS.play(); }
-   items.splice(i,1);
-  }
- });
+  if (isColliding(player.x, player.y, player.size, x, it.y, 80)){ // slightly bigger
 
- if(score<0){ score=0; lives--; }
+   if(it.type==="fruit"){ 
+       score+=3; 
+       fruitS.currentTime=0;
+       fruitS.play(); 
+   }
+   else { 
+       score+=2; 
+       flowerS.currentTime=0;
+       flowerS.play(); 
+   }
+
+   items.splice(i,1);
+
+   // 🔥 disable safe mode AFTER reaching 10
+   if(score >= 10){
+      safeMode = false;
+   }
+  }
+});
+
+ if(score < 0){
+   score = 0;
+   lives--;
+}
 
  if(lives<=0){
    state="end";
@@ -350,17 +385,14 @@ items.forEach(i=>{
  ctx.drawImage(i.type==="fruit"?fruitImg:flowerImg,x,i.y,70,70);
 });
 
-// PLAYER
 let frame=playerFrames[Math.floor(player.frame)%2];
 ctx.drawImage(frame,player.x,player.y,player.size,player.size);
 
-// GHOST
 if(state==="chase"){
  let gx=ghost.x-worldX+player.x;
  ctx.drawImage(ghostImg,gx,ghost.y,130,130);
 }
 
-// STORY SCREEN
 if(showStory){
  ctx.fillStyle="rgba(0,0,0,0.85)";
  ctx.fillRect(canvas.width/2-400,canvas.height/2-150,800,200);
@@ -374,7 +406,6 @@ if(showStory){
  ctx.fillText("NOW RUN FOR YOUR LIFE!",canvas.width/2-200,canvas.height/2+40);
 }
 
-// INSTRUCTIONS
 if(showInstructions){
  ctx.fillStyle="rgba(0,0,0,0.9)";
  ctx.fillRect(canvas.width/2-400,canvas.height/2-220,800,400);
@@ -394,7 +425,6 @@ if(showInstructions){
  ctx.fillText("Press ANY KEY to start!",canvas.width/2-140,canvas.height/2+120);
 }
 
-// UI
 let t=startTime ? Math.floor((Date.now()-startTime)/1000) : 0;
 ctx.fillStyle="white";
 ctx.font="24px Arial";
@@ -402,7 +432,6 @@ ctx.fillText("Time: "+t,20,40);
 ctx.fillText("Score: "+score,20,70);
 ctx.fillText("Lives: "+lives,20,100);
 
-// END
 if(state==="end"){
  ctx.fillStyle="red";
  ctx.font="60px Arial";
