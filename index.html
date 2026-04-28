@@ -92,7 +92,7 @@ const winS=snd("victory.mp3");
 const overS=snd("gameover.wav");
 const waterS=snd("water.mp3");
 
-// 🔥 STOP ALL AUDIO INITIALLY
+// STOP ALL AUDIO INITIALLY
 [jungle, ghostSound, heart, fruitS, flowerS, rockS, logS, winS, overS, waterS].forEach(s => {
     s.pause();
     s.currentTime = 0;
@@ -121,9 +121,30 @@ let keys={};
 let freeze=false;
 let ghostDelay=true;
 
+// NEW STATES
+let showInstructions = false;
+let showStory = false;
+
 // ================= INPUT =================
 document.addEventListener("keydown",e=>keys[e.key]=true);
 document.addEventListener("keyup",e=>keys[e.key]=false);
+
+// Close instructions
+document.addEventListener("keydown",(e)=>{
+ if(showInstructions){
+    showInstructions=false;
+    freeze=false;
+
+    state="chase";
+    ghostDelay=true;
+
+    setTimeout(()=>{
+        ghostDelay=false;
+        ghostSound.play();
+        heart.play();
+    },1000);
+ }
+});
 
 // ================= INTRO =================
 const intro=document.getElementById("introContainer");
@@ -161,7 +182,6 @@ function stopIntro(){
 
 // ================= START =================
 function startGame(){
-
     jungle.pause();
     ghostSound.pause();
     heart.pause();
@@ -214,31 +234,20 @@ if(keys["ArrowDown"]) player.y+=5;
 player.y=Math.max(50,Math.min(canvas.height-150,player.y));
 player.frame+=0.3;
 
-if(state==="explore" && Math.abs(worldX-cave.x)<100){
+// CAVE ENTRY WITH STORY FLOW
+if(state==="explore" && Math.abs(worldX-cave.x)<180){
  state="cave";
- freeze=true;
+ freeze = true;
 
- message="You entered a wrong place...\nRUN!";
+ ghost.x = worldX - 200;
+ ghost.y = player.y;
 
- ghost.x=worldX-200;
- ghost.y=player.y;
+ showStory = true;
 
  setTimeout(()=>{
-   freeze=false;
-
-   setTimeout(()=>{
-     state="chase";
-     ghostDelay=true;
-
-     setTimeout(()=>{
-        ghostDelay=false;
-        ghostSound.play();
-        heart.play();
-     },1000);
-
-   },1000);
-
- },1000);
+    showStory = false;
+    showInstructions = true;
+ },2000);
 }
 
 if(state==="chase"){
@@ -341,38 +350,59 @@ items.forEach(i=>{
  ctx.drawImage(i.type==="fruit"?fruitImg:flowerImg,x,i.y,70,70);
 });
 
+// PLAYER
 let frame=playerFrames[Math.floor(player.frame)%2];
+ctx.drawImage(frame,player.x,player.y,player.size,player.size);
 
-ctx.save();
-if(player.dir===-1){
- ctx.translate(player.x+player.size,0);
- ctx.scale(-1,1);
- ctx.drawImage(frame,0,player.y,player.size,player.size);
-}else{
- ctx.drawImage(frame,player.x,player.y,player.size,player.size);
-}
-ctx.restore();
-
+// GHOST
 if(state==="chase"){
  let gx=ghost.x-worldX+player.x;
  ctx.drawImage(ghostImg,gx,ghost.y,130,130);
 }
 
-let t=startTime ? Math.floor((Date.now()-startTime)/1000) : 0;
+// STORY SCREEN
+if(showStory){
+ ctx.fillStyle="rgba(0,0,0,0.85)";
+ ctx.fillRect(canvas.width/2-400,canvas.height/2-150,800,200);
 
+ ctx.fillStyle="red";
+ ctx.font="26px Arial";
+ ctx.fillText("You entered the wrong place...",canvas.width/2-220,canvas.height/2-60);
+ ctx.fillText("You disturbed something...",canvas.width/2-210,canvas.height/2-20);
+
+ ctx.fillStyle="yellow";
+ ctx.fillText("NOW RUN FOR YOUR LIFE!",canvas.width/2-200,canvas.height/2+40);
+}
+
+// INSTRUCTIONS
+if(showInstructions){
+ ctx.fillStyle="rgba(0,0,0,0.9)";
+ ctx.fillRect(canvas.width/2-400,canvas.height/2-220,800,400);
+
+ ctx.fillStyle="white";
+ ctx.font="26px Arial";
+ ctx.fillText("Escape the Ghost!",canvas.width/2-140,canvas.height/2-170);
+
+ ctx.font="18px Arial";
+
+ ctx.fillText("1. Use RIGHT arrow → to run from the ghost",canvas.width/2-350,canvas.height/2-110);
+ ctx.fillText("2. Use UP and DOWN arrows to avoid obstacles and collect energy",canvas.width/2-350,canvas.height/2-70);
+ ctx.fillText("3. Rocks and wooden logs ahead. Avoid hitting them to save points.",canvas.width/2-350,canvas.height/2-20);
+ ctx.fillText("4. Fruits and flowers ahead. Collect them to increase points.",canvas.width/2-350,canvas.height/2+30);
+
+ ctx.fillStyle="yellow";
+ ctx.fillText("Press ANY KEY to start!",canvas.width/2-140,canvas.height/2+120);
+}
+
+// UI
+let t=startTime ? Math.floor((Date.now()-startTime)/1000) : 0;
 ctx.fillStyle="white";
 ctx.font="24px Arial";
 ctx.fillText("Time: "+t,20,40);
 ctx.fillText("Score: "+score,20,70);
 ctx.fillText("Lives: "+lives,20,100);
 
-if(message){
- ctx.fillStyle="black";
- ctx.fillRect(canvas.width/2-300,50,600,80);
- ctx.fillStyle="yellow";
- ctx.fillText(message,canvas.width/2-250,90);
-}
-
+// END
 if(state==="end"){
  ctx.fillStyle="red";
  ctx.font="60px Arial";
