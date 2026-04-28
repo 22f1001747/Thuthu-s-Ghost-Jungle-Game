@@ -7,7 +7,6 @@
 body { margin:0; overflow:hidden; background:black; }
 canvas { display:block; }
 
-/* Intro */
 #introContainer {
   position:fixed;
   width:100%;
@@ -32,7 +31,6 @@ video {
 #startBtn { bottom:40px; left:40px; }
 #skipBtn { top:20px; right:20px; }
 
-/* Restart */
 #restartBtn {
  position:absolute;
  top:20px;
@@ -45,10 +43,9 @@ video {
 
 <body>
 
-<!-- INTRO -->
 <div id="introContainer">
-  <video id="introVideo" playsinline>
-    <source src="intro_video.mp4">
+  <video id="introVideo" playsinline muted>
+    <source src="./intro_video.mp4" type="video/mp4">
   </video>
 
   <button id="startBtn">Start Game</button>
@@ -95,6 +92,12 @@ const winS=snd("victory.mp3");
 const overS=snd("gameover.wav");
 const waterS=snd("water.mp3");
 
+// 🔥 STOP ALL AUDIO INITIALLY
+[jungle, ghostSound, heart, fruitS, flowerS, rockS, logS, winS, overS, waterS].forEach(s => {
+    s.pause();
+    s.currentTime = 0;
+});
+
 // ================= GAME STATE =================
 let state="intro";
 let worldX=0;
@@ -127,8 +130,13 @@ const intro=document.getElementById("introContainer");
 const video=document.getElementById("introVideo");
 
 document.getElementById("startBtn").onclick=()=>{
-    video.muted=false;
+    video.muted = false;
     video.play();
+
+    jungle.pause();
+    ghostSound.pause();
+    heart.pause();
+
     document.getElementById("startBtn").style.display="none";
 };
 
@@ -137,17 +145,32 @@ video.onended=stopIntro;
 
 function stopIntro(){
     video.pause();
-    video.currentTime=0;
-    video.src=""; // FULL STOP AUDIO
+    video.currentTime = 0;
+
+    video.muted = true;
+    video.src = "";
+    video.load();
+
+    jungle.pause();
+    ghostSound.pause();
+    heart.pause();
+
     intro.style.display="none";
     startGame();
 }
 
 // ================= START =================
 function startGame(){
+
+    jungle.pause();
+    ghostSound.pause();
+    heart.pause();
+
     state="explore";
-    startTime=Date.now(); // TIMER STARTS HERE
-    jungle.volume=0.3;
+    startTime=Date.now();
+
+    jungle.currentTime = 0;
+    jungle.volume = 0.3;
     jungle.play();
 }
 
@@ -183,7 +206,6 @@ function update(){
 if(state==="intro" || state==="end" || state==="escaped") return;
 if(freeze) return;
 
-// PLAYER
 if(keys["ArrowRight"]){ worldX+=6; player.dir=1; }
 if(keys["ArrowLeft"]){ worldX-=6; player.dir=-1; }
 if(keys["ArrowUp"]) player.y-=5;
@@ -192,7 +214,6 @@ if(keys["ArrowDown"]) player.y+=5;
 player.y=Math.max(50,Math.min(canvas.height-150,player.y));
 player.frame+=0.3;
 
-// ===== CAVE =====
 if(state==="explore" && Math.abs(worldX-cave.x)<100){
  state="cave";
  freeze=true;
@@ -220,29 +241,24 @@ if(state==="explore" && Math.abs(worldX-cave.x)<100){
  },1000);
 }
 
-// ===== CHASE =====
 if(state==="chase"){
 
  spawn();
 
- // ghost follow
  if(!ghostDelay){
    ghost.x += (worldX - ghost.x)*0.05;
    ghost.y += (player.y - ghost.y)*0.05;
  }
 
- // collision
  let gx=ghost.x-worldX+player.x;
  if(Math.abs(gx-player.x)<60 && Math.abs(ghost.y-player.y)<60){
    lives--;
    ghost.x -=150;
  }
 
- // objects move
  obstacles.forEach(o=>o.x-=6);
  items.forEach(i=>i.x-=6);
 
- // obstacles
  obstacles.forEach((o,i)=>{
   let x=o.x-worldX+player.x;
 
@@ -256,11 +272,13 @@ if(state==="chase"){
   }
  });
 
- // items
  items.forEach((it,i)=>{
   let x=it.x-worldX+player.x;
 
-  if(Math.abs(x-player.x)<70 && Math.abs(player.y-it.y)<70){
+  if (
+    Math.abs(x - player.x) < player.size * 0.6 &&
+    Math.abs(player.y - it.y) < player.size
+  ){
    if(it.type==="fruit"){ score+=3; fruitS.play(); }
    else { score+=2; flowerS.play(); }
    items.splice(i,1);
@@ -276,7 +294,6 @@ if(state==="chase"){
 
  let t=Math.floor((Date.now()-startTime)/1000);
 
- // river trigger
  if(t===90){
    message="River ahead! Jump!";
    river.active=true;
@@ -299,37 +316,31 @@ function draw(){
 
 ctx.clearRect(0,0,canvas.width,canvas.height);
 
-// background
 let offset=worldX%canvas.width;
 for(let i=0;i<3;i++){
  ctx.drawImage(bg[i],i*canvas.width-offset,0,canvas.width,canvas.height);
 }
 
-// cave
 if(state==="explore"){
  let x=cave.x-worldX+player.x;
  ctx.drawImage(caveImg,x,cave.y,300,300);
 }
 
-// river
 if(river.active){
  let x=river.x-worldX+player.x;
  ctx.drawImage(riverImg,x,river.y,400,250);
 }
 
-// obstacles
 obstacles.forEach(o=>{
  let x=o.x-worldX+player.x;
  ctx.drawImage(o.type==="rock"?rockImg:logImg,x,o.y,100,100);
 });
 
-// items
 items.forEach(i=>{
  let x=i.x-worldX+player.x;
  ctx.drawImage(i.type==="fruit"?fruitImg:flowerImg,x,i.y,70,70);
 });
 
-// player
 let frame=playerFrames[Math.floor(player.frame)%2];
 
 ctx.save();
@@ -342,13 +353,11 @@ if(player.dir===-1){
 }
 ctx.restore();
 
-// ghost
 if(state==="chase"){
  let gx=ghost.x-worldX+player.x;
  ctx.drawImage(ghostImg,gx,ghost.y,130,130);
 }
 
-// UI
 let t=startTime ? Math.floor((Date.now()-startTime)/1000) : 0;
 
 ctx.fillStyle="white";
@@ -357,7 +366,6 @@ ctx.fillText("Time: "+t,20,40);
 ctx.fillText("Score: "+score,20,70);
 ctx.fillText("Lives: "+lives,20,100);
 
-// message
 if(message){
  ctx.fillStyle="black";
  ctx.fillRect(canvas.width/2-300,50,600,80);
@@ -365,7 +373,6 @@ if(message){
  ctx.fillText(message,canvas.width/2-250,90);
 }
 
-// end
 if(state==="end"){
  ctx.fillStyle="red";
  ctx.font="60px Arial";
@@ -379,7 +386,6 @@ if(state==="escaped"){
 }
 }
 
-// ================= LOOP =================
 function loop(){
  update();
  draw();
@@ -387,7 +393,6 @@ function loop(){
 }
 loop();
 
-// restart
 document.getElementById("restartBtn").onclick=()=>location.reload();
 
 </script>
